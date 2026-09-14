@@ -1,0 +1,62 @@
+# The core Semgrep-shaped question this lab is built around:
+#
+#   Can Slack `message.text` (an untrusted user-controlled string that
+#   arrives at a Bolt event handler) flow into a MongoDB write without
+#   passing through a sanitiser?
+#
+# Gratibot's real chain, as documented in the CodebaseMemory lab (Wave 6,
+# Prompt 4):
+#
+#     features/recognize.js:26-85  respondToRecognitionMessage
+#       reads message.text → puts it into gratitude.message
+#         → recognition.validateAndSendGratitude(gratitude)
+#           → giveGratitude(gratitude)
+#             → giveRecognition(..., gratitude.message, ...)
+#               → recognitionCollection.insertOne(collectionValues)
+#                 where collectionValues.message === gratitude.message
+#
+# This rule declares the source (Slack message text as it arrives at Bolt
+# handlers) and the sink (any `.insertOne(...)` call), so Semgrep's
+# intraprocedural taint engine can decide reachability with a real dataflow
+# analysis, not a text match.
+
+rules:
+  - id: liatrio.slack-message-text-to-mongo-insertone
+    message: >-
+      Unsanitised Slack `message.text` reaches a MongoDB `.insertOne` call.
+      Slack message text is user-controlled; storing it verbatim into a
+      document is not a query-operator injection, but it is unfiltered
+      user content lasting for as long as the collection lives. If any
+      downstream consumer renders this text without escaping, it becomes
+      an XSS vector; if it is used in a lookup filter later, it becomes a
+      NoSQL injection vector. Sanitise or length-cap the message before
+      persistence.
+    severity: WARNING
+    languages: [javascript]
+    mode: taint
+    pattern-sources:
+      # A Bolt `app.message` handler receives `{ message, ... }`; the
+      # user's untrusted content is on `message.text`. Also cover the
+      # reaction path where `originalMessage.text` is fetched from the
+      # channel history.
+      - pattern-either:
+          - pattern: $MSG.text
+          - pattern: $EVENT.event.text
+    pattern-sinks:
+      - patterns:
+          - pattern: $COLL.insertOne($DOC)
+    pattern-sanitizers:
+      # If a project ever adds one of these, wire it in — the lab
+      # deliberately leaves this list narrow so gratibot's chain
+      # remains reachable.
+      - pattern-either:
+          - pattern: escape_html($X)
+          - pattern: sanitize($X)
+          - pattern: DOMPurify.sanitize($X)
+    metadata:
+      family: dataflow
+      role: DataFlow
+      lab: ai-code-intelligence-semgrep
+      documentation:
+        - https://github.com/liatrio/ai-code-intelligence/issues/80
+        - https://github.com/liatrio/gratibot

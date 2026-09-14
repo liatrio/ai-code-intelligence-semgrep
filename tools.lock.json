@@ -1,0 +1,20 @@
+{
+  "_comment": "Top-level release pin consumed by setup.py. Semgrep ships as a pure-Python package on PyPI (with a native OCaml binary bundled by platform); setup.py installs it via `uv tool install` into an isolated venv, then verifies `semgrep --version` matches the pin. PyPI integrity is enforced by uv against `requires-hashes` in the lock. Bump semgrep.version here, run `uv pip compile --generate-hashes -o /tmp/semgrep.txt` on a supported host, and copy the semgrep-<version>-py3-none-any.whl sha256 into semgrep.sha256_source below (informational; uv is the enforcer).",
+  "semgrep": {
+    "version": "1.177.0",
+    "released_channel": "PyPI",
+    "repository": "https://github.com/semgrep/semgrep",
+    "release_url_template": "https://pypi.org/project/semgrep/{version}/",
+    "install_via": "uv tool install",
+    "install_target": "semgrep==1.177.0",
+    "sha256_source": "informational; enforced at install time by uv against PyPI",
+    "python_engines": ">=3.10",
+    "licence": "LGPL-2.1-or-later (Community Edition engine); Semgrep Rules License for Semgrep-maintained Registry rules"
+  },
+  "semgrep_mcp": {
+    "_comment": "The vendor MCP server ships in the same package (`semgrep mcp`). No separate pin.",
+    "wired_from": "semgrep",
+    "command": "semgrep",
+    "args": ["mcp"]
+  }
+}

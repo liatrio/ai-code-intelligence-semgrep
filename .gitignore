@@ -1,0 +1,25 @@
+# Lab state — never committed. Everything setup.py writes lives here.
+.lab-state/
+.venv/
+*.pyc
+__pycache__/
+
+# Fixture checkouts (cloned per-machine per issue #77/#80)
+fixtures/gratibot/
+fixtures/liatrio-knowledge/
+
+# Harness transcripts refuse to write into this repo, but belt and braces.
+harness-runs/
+*.jsonl.transcript
+*.stderr
+manifest.json
+
+# Semgrep local caches
+.semgrep_cache/
+.semgrep/
+semgrep-metrics.log
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
