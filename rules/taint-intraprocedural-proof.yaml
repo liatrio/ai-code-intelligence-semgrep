@@ -1,0 +1,56 @@
+# Proof rule: the Semgrep CE taint engine works on an intraprocedural
+# case that actually exists in the fixture. If this fires, we know the
+# engine is running, the sink pattern is correctly matching gratibot's
+# `.insertOne(...)` shape, and the source pattern is a valid Semgrep
+# taint source. If this DOES fire and the sibling
+# `taint-slack-message-to-mongo` rule does NOT fire on the same fixture,
+# that isolates the failure to CE's intraprocedural-taint constraint,
+# not to a rule bug.
+#
+# Target case in gratibot:
+#
+#   service/deduction.js:12
+#     async function createDeduction(user, value, message = "") {
+#       …
+#       const result = await deductionCollection.insertOne({
+#         user, timestamp, refund, value: Number(value), message,   // <-- sink
+#       });
+#     }
+#
+# Here `message` is a function parameter (potentially untrusted) that
+# flows into `.insertOne(...)` **within the same function**. This is
+# exactly the shape CE's intraprocedural taint engine is designed to
+# catch.
+
+rules:
+  - id: liatrio.intraprocedural-taint-engine-proof
+    message: >-
+      Intraprocedural taint proof: function parameter `message` reaches
+      `.insertOne(...)` in the same function. If this rule fires, the
+      Semgrep taint engine is running correctly; if it does not fire on
+      a fixture where the code above is present, the engine is broken
+      (rule out before blaming CE's cross-function constraint).
+    severity: INFO
+    languages: [javascript]
+    mode: taint
+    pattern-sources:
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  async function createDeduction($USER, $VALUE, $MESSAGE) {
+                    ...
+                  }
+              - pattern: |
+                  function createDeduction($USER, $VALUE, $MESSAGE) {
+                    ...
+                  }
+          - focus-metavariable: $MESSAGE
+    pattern-sinks:
+      - patterns:
+          - pattern: $COLL.insertOne($DOC)
+    metadata:
+      family: dataflow
+      lab: ai-code-intelligence-semgrep
+      purpose: proof-of-taint-engine
+      documentation:
+        - https://github.com/liatrio/ai-code-intelligence/issues/80

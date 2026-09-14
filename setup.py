@@ -110,13 +110,18 @@ def refuse_if_appsec_configured() -> str | None:
     return None
 
 
-def installed_semgrep_version() -> str | None:
-    """Return the installed semgrep version string, or None if not found."""
+def installed_semgrep_version(timeout: int = 60) -> str | None:
+    """Return the installed semgrep version string, or None if not found.
+
+    First-run cold start of Semgrep on macOS + Rosetta / uv-managed venvs
+    can take upwards of 30 seconds (native OCaml runtime plus rule cache
+    warm-up); a tight 15s timeout races that. Default to 60s so the check
+    only fails when semgrep is really absent."""
     binary = which("semgrep")
     if not binary:
         return None
     try:
-        r = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=15)
+        r = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=timeout)
         return r.stdout.strip() or None
     except Exception:
         return None
