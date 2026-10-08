@@ -83,7 +83,8 @@ jobs:
   notify-failure:
     name: notify-failure
     needs: check
-    if: failure() && github.event_name == 'schedule'
+    # always(): a timed-out or cancelled check must report too, not only failure().
+    if: always() && github.event_name == 'schedule' && needs.check.result != 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -94,10 +95,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CHECK_RESULT: ${{ needs.check.result }}
         run: |
           set -euo pipefail
           gh label create ci-failure --color B60205 --description "Scheduled CI run failed" 2>/dev/null || true
-          body="Scheduled run failed on \`${GITHUB_SHA::7}\`: ${RUN_URL}"
+          body="Scheduled \`check\` run ${CHECK_RESULT} on \`${GITHUB_SHA::7}\`: ${RUN_URL}"
           issue="$(gh issue list --label ci-failure --state open --limit 1 --json number --jq '.[0].number // empty')"
           if [ -n "$issue" ]; then
             gh issue comment "$issue" --body "$body"
