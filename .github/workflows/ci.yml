@@ -1,0 +1,109 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "31 6 * * 1" # weekly; minute staggered per lab repo
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SEMGREP_SEND_METRICS: "off"
+      FIXTURE_URL: https://github.com/liatrio/gratibot.git
+      FIXTURE_SHA: 4d15aaacd6e4a3e03bff47c527921d86a0155974
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+      - name: Put uv tools on PATH
+        run: uv tool dir --bin >> "$GITHUB_PATH"
+      - name: Pins agree
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          env = {}
+          for line in open("versions.env"):
+              line = line.strip()
+              if line and not line.startswith("#") and "=" in line:
+                  k, v = line.split("=", 1)
+                  env[k.strip()] = v.strip()
+          lock = json.load(open("tools.lock.json"))
+          pairs = [
+              ("SEMGREP_VERSION vs tools.lock semgrep.version", env["SEMGREP_VERSION"], lock["semgrep"]["version"]),
+              ("tools.lock install_target vs SEMGREP_VERSION", lock["semgrep"]["install_target"], "semgrep==" + env["SEMGREP_VERSION"]),
+              ("PYTHON_ENGINES vs tools.lock", env["PYTHON_ENGINES"], lock["semgrep"]["python_engines"]),
+          ]
+          bad = [p for p in pairs if p[1] != p[2]]
+          for name, a, b in bad:
+              print(f"::error::{name}: {a!r} != {b!r}")
+          print(f"{len(pairs) - len(bad)}/{len(pairs)} pin pairs agree")
+          sys.exit(1 if bad else 0)
+          PY
+      - name: Install pinned tools
+        run: python3 setup.py
+      - name: Check
+        run: python3 setup.py --check
+      - name: Fetch fixture (gratibot at a pinned commit)
+        run: |
+          git init -q "$RUNNER_TEMP/gratibot"
+          git -C "$RUNNER_TEMP/gratibot" fetch -q --depth 1 "$FIXTURE_URL" "$FIXTURE_SHA"
+          git -C "$RUNNER_TEMP/gratibot" checkout -q FETCH_HEAD
+      - name: Smoke
+        run: |
+          semgrep scan --validate --metrics off --config rules
+          python3 setup.py --scan "$RUNNER_TEMP/gratibot" --rules ./rules | tee "$RUNNER_TEMP/scan.json"
+          python3 -c 'import json,sys; s=json.loads(open(sys.argv[1]).read().splitlines()[-1]); print("findings:", s["findings_count"]); sys.exit(0 if s["ok"] and s["findings_count"] > 0 else 1)' "$RUNNER_TEMP/scan.json"
+      - name: Teardown
+        if: always()
+        run: |
+          rc=0
+          python3 setup.py --clean || rc=1
+          rm -rf "$RUNNER_TEMP/gratibot" "$RUNNER_TEMP/scan.json"
+          exit $rc
+
+  notify-failure:
+    name: notify-failure
+    needs: check
+    # always(): a timed-out or cancelled check must report too, not only failure().
+    if: always() && github.event_name == 'schedule' && needs.check.result != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the ci-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CHECK_RESULT: ${{ needs.check.result }}
+        run: |
+          set -euo pipefail
+          gh label create ci-failure --color B60205 --description "Scheduled CI run failed" 2>/dev/null || true
+          body="Scheduled \`check\` run ${CHECK_RESULT} on \`${GITHUB_SHA::7}\`: ${RUN_URL}"
+          issue="$(gh issue list --label ci-failure --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body "$body"
+          else
+            gh issue create --title "Scheduled CI is failing" --label ci-failure \
+              --body "$body"$'\n\n'"Close this once main is green again. The next scheduled failure opens a new issue."
+          fi

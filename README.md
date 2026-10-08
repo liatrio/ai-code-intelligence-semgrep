@@ -97,6 +97,26 @@ fixtures/README.md       How to point setup.py at fixture checkouts.
 Makefile                 Convenience wrapper around setup.py.
 ```
 
+## CI
+
+`.github/workflows/ci.yml` installs the pinned tool, runs `python3 setup.py --check`,
+runs a keyless smoke (validating `rules/` and scanning public `liatrio/gratibot` at a pinned commit), and always tears down. It runs on
+pull requests, on pushes to `main`, by hand (`workflow_dispatch`), and weekly
+(Mondays 06:31 UTC), so a pin that stops resolving upstream shows up even when
+nobody is touching the repo.
+
+When a scheduled run fails, the `notify-failure` job opens an issue labelled
+`ci-failure`, or comments on the one already open. Close it once `main` is
+green again.
+
+Dependabot (`.github/dependabot.yml`) checks GitHub Actions weekly.
+Patch and minor updates auto-merge once the `check` job passes. That needs
+**Allow auto-merge** turned on and `check` set as a required status check on
+`main`. Until both are set, the auto-merge job logs a warning and leaves the PR
+for a human. The tool pins in `versions.env` and `tools.lock.json` are not
+Dependabot-tracked. The weekly run is what tells you one has stopped
+resolving. Bumping a pin changes what was scored, so it stays a manual change.
+
 ## Licence
 
 The lab code is Apache-2.0. Semgrep Community Edition is LGPL-2.1-or-later
