@@ -109,6 +109,14 @@ When a scheduled run fails, the `notify-failure` job opens an issue labelled
 `ci-failure`, or comments on the one already open. Close it once `main` is
 green again.
 
+Dependabot (`.github/dependabot.yml`) checks GitHub Actions weekly.
+Patch and minor updates auto-merge once the `check` job passes. That needs
+**Allow auto-merge** turned on and `check` set as a required status check on
+`main`. Until both are set, the auto-merge job logs a warning and leaves the PR
+for a human. The tool pins in `versions.env` and `tools.lock.json` are not
+Dependabot-tracked. The weekly run is what tells you one has stopped
+resolving. Bumping a pin changes what was scored, so it stays a manual change.
+
 ## Licence
 
 The lab code is Apache-2.0. Semgrep Community Edition is LGPL-2.1-or-later
